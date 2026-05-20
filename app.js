@@ -46,28 +46,14 @@ const ARTISTS = [
 
 const SUPABASE_URL = 'https://ypbhnhpbcaerxbraciah.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_VnsiOgvREne2a46xxkxb6Q_eoDiSq05';
-const SUPABASE_HEADERS = {
-  'apikey': SUPABASE_KEY,
-  'Authorization': `Bearer ${SUPABASE_KEY}`,
-};
 
-const MET_BASE = 'https://collectionapi.metmuseum.org/public/collection/v1';
+// Supabase JS client (loaded from CDN in index.html)
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 const SWIPE_THRESHOLD = 100;
-const PREFETCH_SIZE = 6;
-
-// ── Style ID → Supabase category ─────────────────────────────────────────────
-const STYLE_CATEGORY = {
-  impressionism: 'abstract', abstract: 'abstract', abstractexpr: 'abstract',
-  surrealism: 'surrealism', psychedelic: 'surrealism',
-  pop: 'pop',
-  street: 'street',
-  digital: 'digital',
-  photography: 'photography',
-  expressionism: 'modern', minimalism: 'modern', cubism: 'modern',
-  renaissance: 'modern', baroque: 'modern', romanticism: 'modern',
-  realism: 'modern', artnouveau: 'modern', futurism: 'modern',
-  contemporary: 'modern', japanese: 'modern',
-};
+const PREFETCH_SIZE   = 6;
+const BATCH_SIZE      = 400;   // artworks fetched per RPC call
+const REFILL_AT       = 80;    // refill artBuffer when it drops below this
 
 // ── Art quality filter ──────────────────────────────────────────────────────
 // Block museum junk — buttons, pottery, beads, ancient artifacts, etc.
@@ -142,15 +128,11 @@ function isQualityArt(data) {
 // ============================================================
 
 const state = {
-  user: null,         // { name, preferences: { styles: [], artists: [] } }
-  queue: [],          // legacy (not used for Supabase)
-  cache: {},          // id -> artData
-  liked: [],          // array of artData
-  currentArt: null,   // artData for top card
-  isDragging: false,
-  dragStart: { x: 0, y: 0 },
+  user:        null,   // { name, preferences: { styles: [], artists: [] } }
+  liked:       [],     // array of artData
+  currentArt:  null,   // artData for top card
   isAnimating: false,
-  sbState: null,      // { categories, artistTerms, offset, total }
+  cache:       {},     // id → artData  (for currentArt lookup)
 };
 
 // ============================================================
@@ -159,22 +141,17 @@ const state = {
 
 function save() {
   if (!state.user) return;
-  localStorage.setItem('artswipe_user', JSON.stringify(state.user));
+  localStorage.setItem('artswipe_user',  JSON.stringify(state.user));
   localStorage.setItem('artswipe_liked', JSON.stringify(state.liked));
-  localStorage.setItem('artswipe_sbstate', JSON.stringify(state.sbState));
 }
 
 function load() {
   try {
-    const user    = localStorage.getItem('artswipe_user');
-    const liked   = localStorage.getItem('artswipe_liked');
-    const sbstate = localStorage.getItem('artswipe_sbstate');
-    if (user)    state.user    = JSON.parse(user);
-    if (liked)   state.liked   = JSON.parse(liked);
-    if (sbstate) state.sbState = JSON.parse(sbstate);
-  } catch (e) {
-    console.warn('Failed to load saved state', e);
-  }
+    const user  = localStorage.getItem('artswipe_user');
+    const liked = localStorage.getItem('artswipe_liked');
+    if (user)  state.user  = JSON.parse(user);
+    if (liked) state.liked = JSON.parse(liked);
+  } catch (e) { console.warn('Failed to load saved state', e); }
 }
 
 // ============================================================
@@ -187,7 +164,7 @@ function showPage(id) {
 }
 
 // ============================================================
-// SUPABASE API
+// SUPABASE DATA LAYER
 // ============================================================
 
 function shuffle(arr) {
@@ -199,88 +176,68 @@ function shuffle(arr) {
   return a;
 }
 
+// Convert a Supabase row → internal art object
 function normalizeRow(row) {
+  const src = row.source || 'db';
+  const sid = row.source_id || String(row.id);
   return {
-    id: `sb_${row.id}`,
-    title: row.title || 'Untitled',
-    artist: row.artist || 'Unknown Artist',
-    date: row.year || '',
-    dept: (row.category || '').replace(/_/g, ' '),
-    medium: '',
-    imageSmall: row.thumb_url || row.image_url,
+    id:         `${src}_${sid}`,
+    title:      row.title   || 'Untitled',
+    artist:     row.artist  || '',
+    date:       row.year    || '',
+    dept:       row.department || '',
+    medium:     row.medium  || '',
+    imageSmall: row.image_small || row.thumb_url || row.image_url,
     imageLarge: row.image_url,
-    metUrl: null,
-    source: row.source || 'db',
+    sourceUrl:  row.source_url || '',
   };
 }
 
-async function sbFetchBatch(categories, artistTerms, offset, limit = 50) {
-  try {
-    const params = new URLSearchParams({
-      select: 'id,title,artist,image_url,thumb_url,category,year,source',
-      limit,
-      offset,
-      order: 'id.asc',
-    });
+// ── Art buffer: pre-fetched art objects waiting to become cards ──────────────
+let artBuffer      = [];   // normalizeRow'd objects
+let isFetchingBatch = false;
 
-    // Build category filter
-    const allCats = [...new Set(categories)];
-    if (allCats.length > 0) {
-      params.set('category', `in.(${allCats.join(',')})`);
-    }
-
-    const url = `${SUPABASE_URL}/rest/v1/artworks?${params}`;
-    const res = await fetch(url, { headers: SUPABASE_HEADERS });
-    if (!res.ok) return [];
-    const rows = await res.json();
-    return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
+function activeTags() {
+  const prefs = state.user?.preferences;
+  if (!prefs) return [];
+  return [...prefs.styles, ...prefs.artists];
 }
 
-async function sbCount(categories) {
+// Fetch a fresh random batch from Supabase via RPC (ORDER BY random())
+async function fetchArtBatch() {
+  if (isFetchingBatch) return;
+  isFetchingBatch = true;
   try {
-    const params = new URLSearchParams({ select: 'id', limit: 1 });
-    if (categories.length > 0) {
-      params.set('category', `in.(${categories.join(',')})`);
-    }
-    const url = `${SUPABASE_URL}/rest/v1/artworks?${params}`;
-    const res = await fetch(url, {
-      headers: { ...SUPABASE_HEADERS, 'Prefer': 'count=exact', 'Range': '0-0' },
+    const tags = activeTags();
+    if (!tags.length) return;
+
+    const { data, error } = await sb.rpc('get_artworks', {
+      p_tags:  tags,
+      p_limit: BATCH_SIZE,
     });
-    const count = parseInt(res.headers.get('Content-Range')?.split('/')[1] || '0', 10);
-    return count || 0;
-  } catch { return 0; }
+
+    if (error) {
+      console.warn('Supabase RPC error:', error.message);
+      return;
+    }
+
+    const likedIds  = new Set(state.liked.map(a => a.id));
+    const bufferIds = new Set(artBuffer.map(a => a.id));
+    const fresh = shuffle(data || [])
+      .map(normalizeRow)
+      .filter(a => a.imageLarge && !likedIds.has(a.id) && !bufferIds.has(a.id));
+    artBuffer.push(...fresh);
+  } finally {
+    isFetchingBatch = false;
+  }
 }
 
-async function buildQueue(preferences) {
-  const categories = [...new Set([
-    ...preferences.styles.map(id => STYLE_CATEGORY[id]).filter(Boolean),
-    'modern', // always include a broad fallback
-  ])];
-
-  const artistTerms = preferences.artists
-    .map(id => ARTISTS.find(a => a.id === id)?.label)
-    .filter(Boolean);
-
-  const total = await sbCount(categories);
-  const startOffset = total > 50 ? Math.floor(Math.random() * Math.max(1, total - 50)) : 0;
-
-  state.sbState = { categories, artistTerms, offset: startOffset, total };
-  state.queue = []; // not used for IDs anymore; sbState drives fetching
+// Populate artBuffer from Supabase (called once on preference selection)
+async function buildQueue(prefs) {
+  artBuffer = [];
+  state.user.preferences = prefs;
   save();
-}
-
-async function refillQueueIfNeeded() {
-  // No-op — Supabase batch fetching handles this inline in prefetch
-}
-
-// ── Met Museum fallback (used only if Supabase is empty) ────────────────────
-async function fetchIDsMet(query) {
-  try {
-    const res = await fetch(`${MET_BASE}/search?hasImages=true&q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    return data.objectIDs || [];
-  } catch { return []; }
+  await fetchArtBatch();
 }
 
 // ============================================================
@@ -342,28 +299,27 @@ function escHtml(str) {
 // SWIPE ENGINE
 // ============================================================
 
-let prefetchPromise = null;
 let prefetchedCards = []; // { art, el } ready to insert
 
+// Fill prefetchedCards from artBuffer; trigger refill if buffer runs low
 async function prefetch() {
-  if (prefetchedCards.length >= PREFETCH_SIZE) return;
-  if (!state.sbState) return;
+  // Trigger background refill when buffer is getting low
+  if (artBuffer.length < REFILL_AT && !isFetchingBatch) {
+    fetchArtBatch(); // fire-and-forget
+  }
 
-  const { categories, artistTerms, offset, total } = state.sbState;
-  const likedIds = new Set(state.liked.map(a => String(a.id)));
+  // If we have nothing to work with, wait for a batch
+  if (artBuffer.length === 0 && !isFetchingBatch) return;
+  if (artBuffer.length === 0) {
+    await new Promise(res => setTimeout(res, 300));
+    await prefetch();
+    return;
+  }
 
-  const rows = await sbFetchBatch(categories, artistTerms, offset, 50);
-
-  // Advance offset, wrapping around so feed never ends
-  const nextOffset = (offset + 50) >= (total || 9999) ? 0 : offset + 50;
-  state.sbState = { ...state.sbState, offset: nextOffset };
-  save();
-
-  // Shuffle this batch for variety
-  for (const row of shuffle(rows)) {
-    if (!row.image_url) continue;
-    const art = normalizeRow(row);
-    if (likedIds.has(art.id)) continue; // skip already-liked
+  // Convert artBuffer items → card elements
+  while (prefetchedCards.length < PREFETCH_SIZE && artBuffer.length > 0) {
+    const art = artBuffer.shift();
+    state.cache[art.id] = art;   // register for currentArt lookup
     const el = createCardEl(art);
     prefetchedCards.push({ art, el });
   }
@@ -387,7 +343,8 @@ async function loadNextCard() {
   const cards = stack.querySelectorAll('.card');
 
   if (cards.length === 0) {
-    if (state.queue.length === 0 && prefetchedCards.length === 0) {
+    const hasMore = artBuffer.length > 0 || prefetchedCards.length > 0 || isFetchingBatch;
+    if (!hasMore) {
       showEmptyState();
     } else {
       showLoadingState();
@@ -554,7 +511,7 @@ function handleLogin() {
   state.user = state.user || {};
   state.user.name = name;
 
-  if (state.user.preferences && state.sbState) {
+  if (state.user.preferences) {
     showPage('page-swipe');
     setLikeCount();
     initSwipe();
@@ -628,21 +585,19 @@ async function handleStartExploring() {
   const prefs = getSelectedPrefs();
   if (prefs.styles.length === 0 && prefs.artists.length === 0) return;
 
-  state.user.preferences = prefs;
-  state.queue = [];
+  // Reset all buffers
   state.cache = {};
   prefetchedCards = [];
+  artBuffer = [];
 
   // Clear card stack
-  const stack = getCardStack();
-  stack.querySelectorAll('.card').forEach(c => c.remove());
+  getCardStack().querySelectorAll('.card').forEach(c => c.remove());
 
-  save();
   showPage('page-swipe');
   setLikeCount();
-
   showLoadingState();
-  await buildQueue(prefs);
+
+  await buildQueue(prefs);   // sets state.user.preferences + fills artBuffer
   await initSwipe();
   hideLoadingState();
 }
@@ -715,8 +670,10 @@ function openModal(art) {
   document.getElementById('modal-medium').textContent = art.medium;
 
   const metLink = document.getElementById('modal-met-link');
-  if (art.metUrl) {
-    metLink.href = art.metUrl;
+  const url = art.sourceUrl || art.metUrl || '';
+  if (url) {
+    metLink.href = url;
+    metLink.textContent = 'View Source →';
     metLink.style.display = '';
   } else {
     metLink.style.display = 'none';

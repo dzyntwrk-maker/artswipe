@@ -1,226 +1,432 @@
 #!/usr/bin/env python3
 """
-ArtSwipe Seeder
-Pulls modern/contemporary art from Art Institute of Chicago API
-+ street art & graffiti from Unsplash source
-and stores in Supabase.
+ArtSwipe Seeder — v2
+Loads ~500 quality artworks per style from 3 free museum APIs:
+  1. Art Institute of Chicago (ARTIC)  — no key, great modern/impressionist coverage
+  2. Metropolitan Museum of Art (Met)  — no key, massive classical + all styles
+  3. Cleveland Museum of Art           — no key, good general coverage
+
+Run:
+  SUPABASE_URL=https://xxx.supabase.co SUPABASE_SECRET_KEY=your_service_key python3 seed.py
 """
 
-import os
-import requests
-import time
-import json
-import random
+import os, time, json, random, sys, re
+from urllib.request import urlopen, Request
+from urllib.parse import urlencode, quote
+from urllib.error import HTTPError, URLError
+import ssl
 
+# ── SSL fix for Python 3.14 on macOS ─────────────────────────────────────────
+SSL_CTX = ssl.create_default_context()
+SSL_CTX.check_hostname = False
+SSL_CTX.verify_mode = ssl.CERT_NONE
+
+def http_get(url, timeout=15):
+    try:
+        req = Request(url, headers={"User-Agent": "ArtSwipe/2.0"})
+        with urlopen(req, timeout=timeout, context=SSL_CTX) as r:
+            return json.loads(r.read())
+    except Exception as e:
+        return None
+
+# ── Config ────────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://ypbhnhpbcaerxbraciah.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
-AIC_BASE = "https://api.artic.edu/api/v1"
-IIIF_BASE = "https://www.artic.edu/iiif/2"
 
-HEADERS = {
+if not SUPABASE_KEY:
+    print("ERROR: Set SUPABASE_SECRET_KEY env var")
+    sys.exit(1)
+
+SUPA_HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=minimal,resolution=ignore-duplicates"
+    "Prefer": "resolution=ignore-duplicates,return=minimal",
 }
 
-# ── Art Institute of Chicago queries ─────────────────────────────────────────
-# Focused on things a 20-40 yr old would actually find cool
-AIC_QUERIES = [
-    ("abstract expressionism", "abstract"),
-    ("abstract painting", "abstract"),
-    ("surrealism", "surrealism"),
-    ("cubism", "modern"),
-    ("pop art", "pop"),
-    ("color field painting", "abstract"),
-    ("street photography", "photography"),
-    ("urban photography", "photography"),
-    ("contemporary painting", "modern"),
-    ("graffiti", "street"),
-    ("street art", "street"),
-    ("mural", "street"),
-    ("neon", "digital"),
-    ("digital", "digital"),
-    ("psychedelic", "surrealism"),
-    ("geometric abstraction", "abstract"),
-    ("minimalism", "modern"),
-    ("expressionism", "modern"),
-    ("collage", "modern"),
-    ("conceptual art", "modern"),
-    ("figurative painting", "modern"),
-    ("assemblage", "modern"),
+TARGET_PER_STYLE = 500   # aim for this many per style
+BATCH_SIZE       = 50    # rows per Supabase insert
+
+# ── Art styles (matching app.js ART_STYLES + ARTISTS) ────────────────────────
+STYLES = [
+    # id, display label, search queries for each museum
+    ("impressionism",  "Impressionism",          ["impressionism", "impressionist painting"]),
+    ("abstract",       "Abstract",               ["abstract painting", "abstract art"]),
+    ("surrealism",     "Surrealism",             ["surrealism", "surrealist"]),
+    ("pop",            "Pop Art",                ["pop art", "popular art"]),
+    ("street",         "Street Art & Graffiti",  ["street art", "graffiti", "urban mural"]),
+    ("expressionism",  "Expressionism",          ["expressionism", "expressionist painting"]),
+    ("abstractexpr",   "Abstract Expressionism", ["abstract expressionism", "action painting"]),
+    ("minimalism",     "Minimalism",             ["minimalism", "minimal art"]),
+    ("cubism",         "Cubism",                 ["cubism", "cubist"]),
+    ("renaissance",    "Renaissance",            ["renaissance painting", "renaissance art"]),
+    ("baroque",        "Baroque",                ["baroque painting", "baroque art"]),
+    ("romanticism",    "Romanticism",            ["romanticism", "romantic painting"]),
+    ("realism",        "Realism",                ["realism", "realist painting"]),
+    ("artnouveau",     "Art Nouveau",            ["art nouveau", "jugendstil"]),
+    ("digital",        "Digital Art",            ["digital art", "computer art"]),
+    ("photography",    "Photography",            ["fine art photography", "artistic photography"]),
+    ("psychedelic",    "Psychedelic",            ["psychedelic art", "visionary art"]),
+    ("futurism",       "Futurism",               ["futurism", "futurist painting"]),
+    ("contemporary",   "Contemporary",           ["contemporary art", "contemporary painting"]),
+    ("japanese",       "Japanese Art",           ["japanese woodblock", "ukiyo-e", "japanese painting"]),
 ]
 
-# ── Unsplash source images for street art / graffiti ─────────────────────────
-UNSPLASH_QUERIES = [
-    ("graffiti art wall colorful", "street", "Graffiti Art"),
-    ("street art mural urban", "street", "Urban Mural"),
-    ("banksy style street art", "street", "Street Art"),
-    ("abstract colorful painting", "abstract", "Abstract Painting"),
-    ("neon lights art", "digital", "Neon Art"),
-    ("glitch art digital", "digital", "Digital Art"),
-    ("spray paint art colorful", "street", "Spray Art"),
-    ("contemporary abstract art", "abstract", "Contemporary Abstract"),
-    ("pop art bright colors", "pop", "Pop Art"),
-    ("psychedelic art trippy", "surrealism", "Psychedelic Art"),
-    ("urban street photography", "photography", "Urban Photography"),
-    ("cyberpunk neon art", "digital", "Cyberpunk Art"),
-    ("bold graphic design art", "pop", "Graphic Art"),
-    ("modern art gallery", "modern", "Modern Art"),
-    ("fluid abstract art pour", "abstract", "Fluid Art"),
+ARTIST_TAGS = [
+    ("vangogh",      "Van Gogh",           ["van gogh"]),
+    ("picasso",      "Picasso",            ["picasso", "pablo picasso"]),
+    ("dali",         "Dalí",              ["dali", "salvador dali"]),
+    ("warhol",       "Warhol",             ["andy warhol", "warhol"]),
+    ("basquiat",     "Basquiat",           ["basquiat", "jean-michel basquiat"]),
+    ("klimt",        "Klimt",              ["klimt", "gustav klimt"]),
+    ("haring",       "Keith Haring",       ["keith haring"]),
+    ("kahlo",        "Frida Kahlo",        ["frida kahlo"]),
+    ("monet",        "Monet",              ["monet", "claude monet"]),
+    ("pollock",      "Pollock",            ["jackson pollock"]),
+    ("hokusai",      "Hokusai",            ["hokusai", "katsushika"]),
+    ("magritte",     "Magritte",           ["magritte", "rene magritte"]),
+    ("rothko",       "Rothko",             ["mark rothko", "rothko"]),
+    ("munch",        "Munch",              ["edvard munch", "munch"]),
+    ("matisse",      "Matisse",            ["matisse", "henri matisse"]),
+    ("lichtenstein", "Lichtenstein",       ["lichtenstein", "roy lichtenstein"]),
 ]
 
-seen_source_ids = set()
+ALL_TAGS = STYLES + ARTIST_TAGS   # process both
 
-def fetch_aic_page(query, page=1, limit=50):
-    """Fetch artworks from Art Institute of Chicago API."""
-    try:
-        r = requests.get(
-            f"{AIC_BASE}/artworks/search",
-            params={
-                "q": query,
-                "limit": limit,
-                "page": page,
-                "fields": "id,title,artist_display,image_id,department_title,date_display",
-            },
-            timeout=15
-        )
-        if r.status_code != 200:
-            return []
-        data = r.json().get("data", [])
-        artworks = []
-        for d in data:
-            if not d.get("image_id"):
-                continue
-            sid = f"aic_{d['id']}"
-            if sid in seen_source_ids:
-                continue
-            seen_source_ids.add(sid)
-            artworks.append({
-                "title": (d.get("title") or "Untitled")[:200],
-                "artist": (d.get("artist_display") or "Unknown Artist")[:200].split("\n")[0],
-                "image_url": f"{IIIF_BASE}/{d['image_id']}/full/800,/0/default.jpg",
-                "thumb_url": f"{IIIF_BASE}/{d['image_id']}/full/400,/0/default.jpg",
-                "category": "",  # filled by caller
-                "tags": [],
-                "source": "aic",
-                "source_id": sid,
-                "year": d.get("date_display", ""),
-            })
-        return artworks
-    except Exception as e:
-        print(f"  AIC error: {e}")
-        return []
+# ── Quality filter ────────────────────────────────────────────────────────────
+BLOCKED_WORDS = {
+    "button","buttons","bead","beads","vessel","bowl","bowls","jar","jars",
+    "cup","cups","plate","plates","pitcher","pitchers","vase","vases",
+    "ewer","flask","amphora","kylix","lekythos","krater","oinochoe",
+    "coin","coins","medal","medals","badge","brooch","pin","clasp",
+    "buckle","hook","needle","tile","tiles","shard","fragment",
+    "textile","tapestry","carpet","rug","furniture","chair","table",
+    "cabinet","box","chest","lock","key","knife","sword","helmet",
+    "armor","armour","spear","axe","dagger","necklace","bracelet",
+    "ring","earring","pendant","fibula","statuette","figurine",
+    "amulet","scarab","mummy","inscription","relief","frieze",
+    "sarcophagus","weight","seal","stamp","die",
+}
 
-def fetch_unsplash_url(query, sig):
-    """Follow source.unsplash.com redirect to get stable CDN URL."""
-    try:
-        url = f"https://source.unsplash.com/800x1200/?{requests.utils.quote(query)}&sig={sig}"
-        r = requests.head(url, allow_redirects=True, timeout=10)
-        final = r.url
-        if "images.unsplash.com" in final:
-            # Strip existing size params and set our own
-            base = final.split("?")[0]
-            return (
-                base + "?w=800&h=1000&fit=crop&q=85&auto=format",
-                base + "?w=400&h=500&fit=crop&q=80&auto=format",
-                f"unsplash_{query[:20]}_{sig}"
-            )
-        return None, None, None
-    except Exception as e:
-        print(f"  Unsplash error ({query}, {sig}): {e}")
-        return None, None, None
+BLOCKED_MEDIUMS = {
+    "ceramic","earthenware","stoneware","faience","porcelain",
+    "terracotta","bone","ivory","shell","amber","glass","enamel",
+}
 
-def insert_batch(rows):
-    """Insert a batch into Supabase artworks table."""
+GOOD_DEPARTMENTS = {
+    "European Paintings","American Paintings and Sculpture",
+    "Drawings and Prints","Photographs","Modern Art",
+    "Contemporary Art","Robert Lehman Collection",
+    "The American Wing","Asian Art","19th-Century European Paintings",
+}
+
+def quality_ok(title="", medium="", department="", obj_type=""):
+    t = title.lower()
+    m = medium.lower()
+    # Block garbage
+    for w in BLOCKED_WORDS:
+        if re.search(r'\b' + w + r'\b', t):
+            return False
+    for w in BLOCKED_MEDIUMS:
+        if w in m:
+            return False
+    # Department allow-list (if known)
+    if department and department not in GOOD_DEPARTMENTS:
+        is_painterly = any(x in m for x in [
+            "oil","acrylic","watercolor","gouache","ink","pencil",
+            "chalk","pastel","tempera","fresco","lithograph","etching",
+        ]) or any(x in obj_type.lower() for x in [
+            "painting","print","drawing","photograph","poster",
+        ])
+        if not is_painterly:
+            return False
+    return True
+
+# ── Global dedup ──────────────────────────────────────────────────────────────
+seen_ids = set()   # "source:source_id" strings — dedup across all queries
+
+# ── Supabase upsert ───────────────────────────────────────────────────────────
+def upsert_rows(rows):
     if not rows:
         return 0
-    r = requests.post(
+    from urllib.request import Request
+    import urllib.request
+    data = json.dumps(rows).encode()
+    req = Request(
         f"{SUPABASE_URL}/rest/v1/artworks",
-        headers=HEADERS,
-        json=rows,
-        timeout=20
+        data=data,
+        headers=SUPA_HEADERS,
+        method="POST",
     )
-    if r.status_code in (200, 201):
-        return len(rows)
-    else:
-        print(f"  Insert error {r.status_code}: {r.text[:200]}")
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as r:
+            return len(rows)
+    except HTTPError as e:
+        body = e.read().decode()[:300]
+        print(f"\n  ⚠ Supabase error {e.code}: {body}")
+        return 0
+    except Exception as e:
+        print(f"\n  ⚠ Insert error: {e}")
         return 0
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SOURCE 1: Art Institute of Chicago
+# ══════════════════════════════════════════════════════════════════════════════
+ARTIC_FIELDS = "id,title,artist_display,date_display,medium_display,department_title,image_id,artwork_type_title"
+IIIF = "https://www.artic.edu/iiif/2"
+
+GOOD_ARTIC_TYPES = {
+    "Painting","Drawing and Watercolor","Print","Photograph",
+    "Architectural Drawing","Design","Textile","Vessel",
+    "Decorative Arts","Mixed Media",
+}
+
+def fetch_artic(query, style_id, max_per_query=200):
+    results = []
+    for page in range(1, 6):
+        url = (f"https://api.artic.edu/api/v1/artworks/search"
+               f"?q={quote(query)}&fields={ARTIC_FIELDS}&limit=100&page={page}")
+        data = http_get(url)
+        if not data:
+            break
+        items = data.get("data", [])
+        if not items:
+            break
+        for d in items:
+            img = d.get("image_id")
+            if not img:
+                continue
+            sid = f"artic:{d['id']}"
+            if sid in seen_ids:
+                continue
+            title = (d.get("title") or "Untitled")[:250]
+            medium = (d.get("medium_display") or "")[:200]
+            dept = d.get("department_title") or ""
+            obj_type = d.get("artwork_type_title") or ""
+            if not quality_ok(title, medium, dept, obj_type):
+                continue
+            seen_ids.add(sid)
+            results.append({
+                "source":      "artic",
+                "source_id":   str(d["id"]),
+                "title":       title,
+                "artist":      (d.get("artist_display") or "").split("\n")[0][:200],
+                "year":        d.get("date_display") or "",
+                "medium":      medium,
+                "department":  dept,
+                "style_tags":  [style_id],
+                "image_url":   f"{IIIF}/{img}/full/843,/0/default.jpg",
+                "image_small": f"{IIIF}/{img}/full/400,/0/default.jpg",
+                "source_url":  f"https://www.artic.edu/artworks/{d['id']}",
+            })
+            if len(results) >= max_per_query:
+                return results
+        time.sleep(0.25)
+    return results
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SOURCE 2: Metropolitan Museum of Art
+# ══════════════════════════════════════════════════════════════════════════════
+MET_SEARCH = "https://collectionapi.metmuseum.org/public/collection/v1/search"
+MET_OBJECT = "https://collectionapi.metmuseum.org/public/collection/v1/objects"
+
+def fetch_met(query, style_id, max_ids=800, max_results=200):
+    # Step 1: get IDs
+    url = f"{MET_SEARCH}?hasImages=true&q={quote(query)}"
+    data = http_get(url)
+    if not data:
+        return []
+    ids = data.get("objectIDs") or []
+    random.shuffle(ids)
+    ids = ids[:max_ids]
+
+    results = []
+    consecutive_fails = 0
+
+    for oid in ids:
+        if len(results) >= max_results:
+            break
+        sid = f"met:{oid}"
+        if sid in seen_ids:
+            continue
+        d = http_get(f"{MET_OBJECT}/{oid}")
+        if not d:
+            consecutive_fails += 1
+            if consecutive_fails > 10:
+                break
+            continue
+        consecutive_fails = 0
+
+        img_large = d.get("primaryImage") or ""
+        img_small = d.get("primaryImageSmall") or img_large
+        if not img_large:
+            continue
+
+        title = (d.get("title") or "Untitled")[:250]
+        medium = (d.get("medium") or "")[:200]
+        dept = d.get("department") or ""
+        obj_type = (d.get("objectName") or "")
+
+        if not quality_ok(title, medium, dept, obj_type):
+            continue
+
+        seen_ids.add(sid)
+        results.append({
+            "source":      "met",
+            "source_id":   str(oid),
+            "title":       title,
+            "artist":      (d.get("artistDisplayName") or "")[:200],
+            "year":        d.get("objectDate") or "",
+            "medium":      medium,
+            "department":  dept,
+            "style_tags":  [style_id],
+            "image_url":   img_large,
+            "image_small": img_small,
+            "source_url":  d.get("objectURL") or f"https://www.metmuseum.org/art/collection/search/{oid}",
+        })
+        time.sleep(0.05)   # ~20 req/sec, polite
+
+    return results
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SOURCE 3: Cleveland Museum of Art
+# ══════════════════════════════════════════════════════════════════════════════
+CLEV_BASE = "https://openaccess-api.clevelandart.org/api/artworks"
+
+def fetch_cleveland(query, style_id, max_per_query=150):
+    results = []
+    for skip in range(0, 600, 100):
+        url = (f"{CLEV_BASE}/?has_image=1"
+               f"&q={quote(query)}&limit=100&skip={skip}")
+        data = http_get(url)
+        if not data:
+            break
+        items = data.get("data", [])
+        if not items:
+            break
+        for d in items:
+            imgs = d.get("images") or {}
+            img_large = (imgs.get("full") or {}).get("url") or \
+                        (imgs.get("web") or {}).get("url") or ""
+            img_small = (imgs.get("web") or {}).get("url") or img_large
+            if not img_large:
+                continue
+            sid = f"cleveland:{d.get('id','')}"
+            if sid in seen_ids:
+                continue
+            title = (d.get("title") or "Untitled")[:250]
+            medium = (d.get("technique") or "")[:200]
+            dept = d.get("department") or ""
+            obj_type = d.get("type") or ""
+            if not quality_ok(title, medium, dept, obj_type):
+                continue
+            creators = d.get("creators") or []
+            artist = ", ".join(c.get("description","") for c in creators[:2])[:200]
+            seen_ids.add(sid)
+            results.append({
+                "source":      "cleveland",
+                "source_id":   str(d.get("id","")),
+                "title":       title,
+                "artist":      artist,
+                "year":        d.get("creation_date") or "",
+                "medium":      medium,
+                "department":  dept,
+                "style_tags":  [style_id],
+                "image_url":   img_large,
+                "image_small": img_small,
+                "source_url":  f"https://www.clevelandart.org/art/{d.get('id','')}",
+            })
+            if len(results) >= max_per_query:
+                return results
+        time.sleep(0.2)
+    return results
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN: iterate all styles + artists
+# ══════════════════════════════════════════════════════════════════════════════
+def merge_tags(existing_rows, new_rows):
+    """Merge style_tags for artworks already seen (so one artwork can have many tags)."""
+    by_key = {}
+    for r in existing_rows:
+        k = f"{r['source']}:{r['source_id']}"
+        by_key[k] = r
+    for r in new_rows:
+        k = f"{r['source']}:{r['source_id']}"
+        if k in by_key:
+            # merge tags
+            merged = list(set(by_key[k]["style_tags"] + r["style_tags"]))
+            by_key[k]["style_tags"] = merged
+        else:
+            by_key[k] = r
+    return list(by_key.values())
+
+def flush(batch, total):
+    n = upsert_rows(batch)
+    total += n
+    return [], total
+
 def main():
-    total = 0
+    grand_total = 0
     batch = []
 
-    print("=" * 55)
-    print("  ArtSwipe Seeder — pulling modern & street art")
-    print("=" * 55)
+    print("=" * 60)
+    print("  ArtSwipe Seeder v2  —  ~500 artworks per style")
+    print(f"  Target: {len(ALL_TAGS)} tags × {TARGET_PER_STYLE} = "
+          f"{len(ALL_TAGS) * TARGET_PER_STYLE:,} artworks")
+    print("=" * 60)
 
-    # ── Phase 1: Art Institute of Chicago ────────────────────
-    print("\n📦 Phase 1: Art Institute of Chicago (modern/abstract/surreal)")
-    for query, category in AIC_QUERIES:
-        print(f"  → '{query}'", end="", flush=True)
-        for page in range(1, 3):  # 2 pages × 50 = 100 per query
-            rows = fetch_aic_page(query, page=page, limit=50)
-            for row in rows:
-                row["category"] = category
-                row["tags"] = [query, category]
-                batch.append(row)
+    for tag_id, tag_label, queries in ALL_TAGS:
+        print(f"\n▶ {tag_label} [{tag_id}]")
+        collected = []
+
+        for query in queries:
+            remaining = TARGET_PER_STYLE - len(collected)
+            if remaining <= 0:
+                break
+
+            # Distribute across 3 sources
+            per_src = max(80, remaining // 3 + 50)
+
+            # ARTIC — fastest, paginated
+            print(f"   ARTIC '{query}' ...", end=" ", flush=True)
+            rows = fetch_artic(query, tag_id, max_per_query=per_src)
+            collected = merge_tags(collected, rows)
+            print(f"{len(rows)} → {len(collected)} total")
             time.sleep(0.3)
 
-        # Flush batch every 100 items
-        if len(batch) >= 100:
-            n = insert_batch(batch)
-            total += n
-            print(f" → inserted {total} total")
-            batch = []
-        else:
-            print(f" ✓ ({len(rows)} found)")
-        time.sleep(0.5)
+            # Met — big collection, slower (individual fetches)
+            if len(collected) < TARGET_PER_STYLE:
+                print(f"   Met   '{query}' ...", end=" ", flush=True)
+                rows = fetch_met(query, tag_id, max_ids=600, max_results=min(150, per_src))
+                collected = merge_tags(collected, rows)
+                print(f"{len(rows)} → {len(collected)} total")
+                time.sleep(0.3)
 
-    # Flush remainder
+            # Cleveland — supplementary
+            if len(collected) < TARGET_PER_STYLE:
+                print(f"   Clev  '{query}' ...", end=" ", flush=True)
+                rows = fetch_cleveland(query, tag_id, max_per_query=min(100, per_src))
+                collected = merge_tags(collected, rows)
+                print(f"{len(rows)} → {len(collected)} total")
+                time.sleep(0.2)
+
+        # Flush this style's artworks
+        print(f"   → Upserting {len(collected)} artworks to Supabase ...", end=" ", flush=True)
+        for i in range(0, len(collected), BATCH_SIZE):
+            chunk = collected[i:i + BATCH_SIZE]
+            batch.extend(chunk)
+            if len(batch) >= BATCH_SIZE:
+                batch, grand_total = flush(batch, grand_total)
+
+        print(f"done  (running total: {grand_total:,})")
+
+    # Final flush
     if batch:
-        n = insert_batch(batch)
-        total += n
-        print(f"  → flushed {n}, total: {total}")
-        batch = []
+        batch, grand_total = flush(batch, grand_total)
 
-    # ── Phase 2: Unsplash street/graffiti/digital ─────────────
-    print(f"\n🎨 Phase 2: Unsplash — street art, graffiti, digital")
-    for query, category, label in UNSPLASH_QUERIES:
-        print(f"  → '{query}'", end="", flush=True)
-        count = 0
-        for sig in range(1, 26):  # 25 images per query
-            img_url, thumb_url, sid = fetch_unsplash_url(query, sig)
-            if not img_url or sid in seen_source_ids:
-                continue
-            seen_source_ids.add(sid)
-            batch.append({
-                "title": f"{label} #{sig}",
-                "artist": "Various Artists",
-                "image_url": img_url,
-                "thumb_url": thumb_url,
-                "category": category,
-                "tags": [query, category],
-                "source": "unsplash",
-                "source_id": sid,
-                "year": "",
-            })
-            count += 1
-            time.sleep(0.4)
-
-        if len(batch) >= 50:
-            n = insert_batch(batch)
-            total += n
-            batch = []
-
-        print(f" ✓ ({count} images)")
-
-    if batch:
-        n = insert_batch(batch)
-        total += n
-        print(f"  → flushed {n}")
-
-    print(f"\n✅ Done! {total} artworks seeded into Supabase.")
+    print(f"\n{'=' * 60}")
+    print(f"  ✅  Seeding complete!  {grand_total:,} artworks in Supabase")
+    print(f"{'=' * 60}")
 
 if __name__ == "__main__":
     main()
