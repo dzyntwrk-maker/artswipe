@@ -3,42 +3,118 @@
 // ============================================================
 
 const ART_STYLES = [
-  { id: 'impressionism', label: 'Impressionism', icon: '🌸', query: 'impressionism' },
-  { id: 'abstract', label: 'Abstract', icon: '◻', query: 'abstract art' },
-  { id: 'renaissance', label: 'Renaissance', icon: '🏛', query: 'renaissance painting' },
-  { id: 'baroque', label: 'Baroque', icon: '✦', query: 'baroque' },
-  { id: 'surrealism', label: 'Surrealism', icon: '🌀', query: 'surrealism' },
-  { id: 'modern', label: 'Modern Art', icon: '◉', query: 'modern art' },
-  { id: 'portrait', label: 'Portraits', icon: '👤', query: 'portrait painting' },
-  { id: 'landscape', label: 'Landscapes', icon: '🏔', query: 'landscape painting' },
-  { id: 'japanese', label: 'Japanese Art', icon: '⛩', query: 'japanese woodblock' },
-  { id: 'photography', label: 'Photography', icon: '📷', query: 'photography' },
-  { id: 'sculpture', label: 'Sculpture', icon: '🗿', query: 'sculpture greek' },
-  { id: 'american', label: 'American Art', icon: '★', query: 'american painting' },
+  { id: 'impressionism',   label: 'Impressionism',         icon: '🌸', query: 'impressionism painting' },
+  { id: 'abstract',        label: 'Abstract',              icon: '🔷', query: 'abstract painting' },
+  { id: 'surrealism',      label: 'Surrealism',            icon: '🌀', query: 'surrealism' },
+  { id: 'pop',             label: 'Pop Art',               icon: '🎯', query: 'pop art' },
+  { id: 'street',          label: 'Street Art & Graffiti', icon: '🏙', query: 'street art graffiti' },
+  { id: 'expressionism',   label: 'Expressionism',         icon: '🔥', query: 'expressionism painting' },
+  { id: 'abstractexpr',    label: 'Abstract Expressionism',icon: '💥', query: 'abstract expressionism' },
+  { id: 'minimalism',      label: 'Minimalism',            icon: '▪', query: 'minimalism art' },
+  { id: 'cubism',          label: 'Cubism',                icon: '◈', query: 'cubism painting' },
+  { id: 'renaissance',     label: 'Renaissance',           icon: '🏛', query: 'renaissance painting' },
+  { id: 'baroque',         label: 'Baroque',               icon: '✦', query: 'baroque painting' },
+  { id: 'romanticism',     label: 'Romanticism',           icon: '🌹', query: 'romanticism painting' },
+  { id: 'realism',         label: 'Realism',               icon: '🖼', query: 'realism painting' },
+  { id: 'artnouveau',      label: 'Art Nouveau',           icon: '🌿', query: 'art nouveau' },
+  { id: 'digital',         label: 'Digital Art',           icon: '💻', query: 'digital art' },
+  { id: 'photography',     label: 'Photography',           icon: '📷', query: 'fine art photography' },
+  { id: 'psychedelic',     label: 'Psychedelic',           icon: '🌈', query: 'psychedelic art' },
+  { id: 'futurism',        label: 'Futurism',              icon: '⚡', query: 'futurism painting' },
+  { id: 'contemporary',    label: 'Contemporary',          icon: '◉', query: 'contemporary art painting' },
+  { id: 'japanese',        label: 'Japanese Art',          icon: '⛩', query: 'japanese woodblock ukiyo-e' },
 ];
 
 const ARTISTS = [
-  { id: 'vangogh', label: 'Van Gogh', icon: '🌻', query: 'Van Gogh' },
-  { id: 'monet', label: 'Monet', icon: '💧', query: 'Claude Monet' },
-  { id: 'picasso', label: 'Picasso', icon: '◈', query: 'Pablo Picasso' },
-  { id: 'rembrandt', label: 'Rembrandt', icon: '🕯', query: 'Rembrandt' },
-  { id: 'vermeer', label: 'Vermeer', icon: '💎', query: 'Johannes Vermeer' },
-  { id: 'dali', label: 'Dalí', icon: '🕰', query: 'Salvador Dali' },
-  { id: 'hokusai', label: 'Hokusai', icon: '🌊', query: 'Katsushika Hokusai' },
-  { id: 'degas', label: 'Degas', icon: '🩰', query: 'Edgar Degas' },
-  { id: 'renoir', label: 'Renoir', icon: '🌺', query: 'Pierre-Auguste Renoir' },
-  { id: 'cezanne', label: 'Cézanne', icon: '🍎', query: 'Paul Cézanne' },
-  { id: 'klimt', label: 'Klimt', icon: '✨', query: 'Gustav Klimt' },
-  { id: 'matisse', label: 'Matisse', icon: '🎨', query: 'Henri Matisse' },
-  { id: 'munch', label: 'Munch', icon: '😱', query: 'Edvard Munch' },
-  { id: 'winslow', label: 'Winslow Homer', icon: '⛵', query: 'Winslow Homer' },
-  { id: 'sargent', label: 'John Singer Sargent', icon: '🎭', query: 'John Singer Sargent' },
-  { id: 'cassatt', label: 'Mary Cassatt', icon: '🌿', query: 'Mary Cassatt' },
+  { id: 'vangogh',    label: 'Van Gogh',          icon: '🌻', query: 'Van Gogh' },
+  { id: 'picasso',    label: 'Picasso',            icon: '◈', query: 'Pablo Picasso' },
+  { id: 'dali',       label: 'Dalí',              icon: '🕰', query: 'Salvador Dali' },
+  { id: 'warhol',     label: 'Warhol',             icon: '🎯', query: 'Andy Warhol' },
+  { id: 'basquiat',   label: 'Basquiat',           icon: '🖊', query: 'Jean-Michel Basquiat' },
+  { id: 'klimt',      label: 'Klimt',              icon: '✨', query: 'Gustav Klimt' },
+  { id: 'haring',     label: 'Keith Haring',       icon: '💗', query: 'Keith Haring' },
+  { id: 'kahlo',      label: 'Frida Kahlo',        icon: '🌺', query: 'Frida Kahlo' },
+  { id: 'monet',      label: 'Monet',              icon: '💧', query: 'Claude Monet' },
+  { id: 'pollock',    label: 'Pollock',            icon: '💥', query: 'Jackson Pollock' },
+  { id: 'hokusai',    label: 'Hokusai',            icon: '🌊', query: 'Katsushika Hokusai' },
+  { id: 'magritte',   label: 'Magritte',           icon: '🎩', query: 'René Magritte' },
+  { id: 'rothko',     label: 'Rothko',             icon: '▪', query: 'Mark Rothko' },
+  { id: 'munch',      label: 'Munch',              icon: '😱', query: 'Edvard Munch' },
+  { id: 'matisse',    label: 'Matisse',            icon: '🎨', query: 'Henri Matisse' },
+  { id: 'lichtenstein', label: 'Lichtenstein',     icon: '💬', query: 'Roy Lichtenstein' },
 ];
 
 const MET_BASE = 'https://collectionapi.metmuseum.org/public/collection/v1';
 const SWIPE_THRESHOLD = 100;
-const PREFETCH_SIZE = 5;
+const PREFETCH_SIZE = 6;
+
+// ── Art quality filter ──────────────────────────────────────────────────────
+// Block museum junk — buttons, pottery, beads, ancient artifacts, etc.
+const BLOCKED_TITLE_WORDS = [
+  'button','buttons','bead','beads','vessel','bowl','bowls','jar','jars',
+  'cup','cups','plate','plates','pitcher','pitchers','vase','vases',
+  'ewer','flask','amphora','kylix','lekythos','krater','oinochoe',
+  'coin','coins','medal','medals','badge','brooch','pin','clasp',
+  'buckle','hook','needle','tile','tiles','shard','fragment',
+  'textile','fabric','tapestry','carpet','rug','furniture','chair',
+  'table','cabinet','box','chest','lock','key','knife','sword',
+  'helmet','armor','armour','spear','axe','dagger',
+  'necklace','bracelet','ring','earring','pendant','fibula',
+  'statuette','figurine','amulet','scarab','mummy',
+  'inscription','relief','frieze','sarcophagus',
+];
+
+const BLOCKED_MEDIUMS = [
+  'ceramic','earthenware','stoneware','faience','porcelain',
+  'terracotta','bone','ivory','shell','amber',
+];
+
+const GOOD_DEPARTMENTS = new Set([
+  'European Paintings',
+  'American Paintings and Sculpture',
+  'Drawings and Prints',
+  'Photographs',
+  'Modern Art',
+  'Contemporary Art',
+  'Robert Lehman Collection',
+  'The American Wing',
+  'Asian Art',
+]);
+
+function isQualityArt(data) {
+  const title  = (data.title || '').toLowerCase();
+  const medium = (data.medium || '').toLowerCase();
+  const dept   = data.department || '';
+  const type   = (data.objectName || '').toLowerCase();
+
+  // Must have an image
+  if (!data.primaryImageSmall && !data.primaryImage) return false;
+
+  // Block by title keyword
+  for (const w of BLOCKED_TITLE_WORDS) {
+    if (title.includes(w)) return false;
+  }
+
+  // Block ugly mediums
+  for (const m of BLOCKED_MEDIUMS) {
+    if (medium.includes(m)) return false;
+  }
+
+  // If we know the department, prefer good ones
+  if (dept && !GOOD_DEPARTMENTS.has(dept)) {
+    // Allow if it's clearly a painting or drawing regardless of dept
+    if (!medium.includes('oil') && !medium.includes('acrylic') &&
+        !medium.includes('watercolor') && !medium.includes('gouache') &&
+        !medium.includes('ink') && !medium.includes('pencil') &&
+        !medium.includes('chalk') && !medium.includes('pastel') &&
+        !type.includes('painting') && !type.includes('print') &&
+        !type.includes('drawing') && !type.includes('photograph')) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 // ============================================================
 // STATE
@@ -111,7 +187,10 @@ async function fetchArt(objectID) {
   try {
     const res = await fetch(`${MET_BASE}/objects/${objectID}`);
     const data = await res.json();
-    if (!data.primaryImageSmall && !data.primaryImage) return null;
+
+    // Quality gate — skip pottery, beads, buttons, artifacts
+    if (!isQualityArt(data)) return null;
+
     const art = {
       id: data.objectID,
       title: data.title || 'Untitled',
@@ -145,15 +224,33 @@ async function buildQueue(preferences) {
     ...preferences.artists.map(id => ARTISTS.find(a => a.id === id)?.query).filter(Boolean),
   ];
 
-  const idSets = await Promise.all(queries.map(fetchIDs));
+  // Fetch in parallel, plus add some broad "always-good" searches
+  const broadQueries = ['painting oil canvas', 'watercolor painting', 'fine art print'];
+  const allQueries = [...queries, ...broadQueries];
+
+  const idSets = await Promise.all(allQueries.map(fetchIDs));
   const seen = new Set(state.liked.map(a => String(a.id)));
 
   const merged = shuffle([...new Set(idSets.flat())])
     .filter(id => !seen.has(String(id)))
-    .slice(0, 500);
+    .slice(0, 2000); // big pool so we don't run dry
 
   state.queue = merged;
   save();
+}
+
+// Auto-refill queue when running low
+async function refillQueueIfNeeded() {
+  if (state.queue.length < 30 && state.user?.preferences) {
+    const extra = await fetchIDs('painting fine art');
+    const seen = new Set([
+      ...state.liked.map(a => String(a.id)),
+      ...state.queue.map(String),
+    ]);
+    const fresh = shuffle(extra).filter(id => !seen.has(String(id))).slice(0, 500);
+    state.queue.push(...fresh);
+    save();
+  }
 }
 
 // ============================================================
@@ -219,11 +316,12 @@ let prefetchPromise = null;
 let prefetchedCards = []; // { art, el } ready to insert
 
 async function prefetch() {
+  refillQueueIfNeeded(); // kick off refill in background if low
   while (prefetchedCards.length < PREFETCH_SIZE && state.queue.length > 0) {
     const id = state.queue.shift();
     save();
     const art = await fetchArt(id);
-    if (!art) continue;
+    if (!art) continue; // filtered out by quality gate
     const el = createCardEl(art);
     prefetchedCards.push({ art, el });
   }
