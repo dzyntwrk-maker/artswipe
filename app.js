@@ -225,7 +225,21 @@ async function fetchArtBatch() {
     const bufferIds = new Set(artBuffer.map(a => a.id));
     const fresh = shuffle(data || [])
       .map(normalizeRow)
-      .filter(a => a.imageLarge && !likedIds.has(a.id) && !bufferIds.has(a.id));
+      .filter(a => {
+        if (!a.imageLarge) return false;
+        if (likedIds.has(a.id) || bufferIds.has(a.id)) return false;
+        // Block pottery/artifacts by title
+        const t = a.title.toLowerCase();
+        for (const w of BLOCKED_TITLE_WORDS) {
+          if (t.includes(w)) return false;
+        }
+        // Block by medium
+        const m = (a.medium || '').toLowerCase();
+        for (const bm of BLOCKED_MEDIUMS) {
+          if (m.includes(bm)) return false;
+        }
+        return true;
+      });
     artBuffer.push(...fresh);
   } finally {
     isFetchingBatch = false;
