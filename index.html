@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ArtSwipe — Discover Art You Love</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ============ LOGIN PAGE ============ -->
+  <div id="page-login" class="page active">
+    <div class="login-bg"></div>
+    <div class="login-content">
+      <div class="logo">
+        <span class="logo-icon">◈</span>
+        <h1>ArtSwipe</h1>
+      </div>
+      <p class="tagline">Discover masterpieces you'll fall in love with</p>
+      <div class="login-form">
+        <input type="text" id="username-input" placeholder="Choose a username" maxlength="30" autocomplete="off" spellcheck="false">
+        <button id="login-btn" class="btn-primary">Start Exploring →</button>
+      </div>
+      <p class="login-note">No account needed. Your collection saves locally.</p>
+    </div>
+    <div class="art-mosaic">
+      <div class="mosaic-cell m1"></div>
+      <div class="mosaic-cell m2"></div>
+      <div class="mosaic-cell m3"></div>
+      <div class="mosaic-cell m4"></div>
+      <div class="mosaic-cell m5"></div>
+      <div class="mosaic-cell m6"></div>
+    </div>
+  </div>
+
+  <!-- ============ PREFERENCES PAGE ============ -->
+  <div id="page-preferences" class="page">
+    <div class="pref-header">
+      <span class="logo-sm">◈ ArtSwipe</span>
+      <p>Tell us what moves you</p>
+    </div>
+    <div class="pref-sections">
+      <section class="pref-section">
+        <h2>Art Styles</h2>
+        <p class="pref-hint">Select all that speak to you</p>
+        <div class="chips" id="style-chips"></div>
+      </section>
+      <section class="pref-section">
+        <h2>Famous Artists</h2>
+        <p class="pref-hint">Artists you already love (or want to discover)</p>
+        <div class="chips" id="artist-chips"></div>
+      </section>
+    </div>
+    <div class="pref-footer">
+      <p id="pref-count" class="pref-count">Select at least 1 preference</p>
+      <button id="start-btn" class="btn-primary" disabled>Explore Art →</button>
+    </div>
+  </div>
+
+  <!-- ============ SWIPE PAGE ============ -->
+  <div id="page-swipe" class="page">
+    <header class="swipe-header">
+      <button id="prefs-btn" class="header-btn" title="Change preferences">✦</button>
+      <span class="logo-sm">◈ ArtSwipe</span>
+      <button id="profile-btn" class="header-btn liked-btn" title="View saved art">
+        ♥ <span id="like-count">0</span>
+      </button>
+    </header>
+
+    <div id="card-stack" class="card-stack"></div>
+    <div id="empty-state" class="empty-state" style="display:none">
+      <div class="empty-icon">◈</div>
+      <h3>You've seen it all!</h3>
+      <p>Change your preferences to discover more art</p>
+      <button id="new-prefs-btn" class="btn-primary">Update Preferences</button>
+    </div>
+    <div id="loading-state" class="loading-state" style="display:none">
+      <div class="spinner"></div>
+      <p>Curating your gallery…</p>
+    </div>
+
+    <div class="swipe-actions">
+      <button id="skip-btn" class="action-btn action-skip" title="Skip (←)">
+        <span>✕</span>
+      </button>
+      <button id="info-btn" class="action-btn action-info" title="More info">
+        <span>i</span>
+      </button>
+      <button id="like-btn" class="action-btn action-like" title="Love it (→)">
+        <span>♥</span>
+      </button>
+    </div>
+
+    <div class="keyboard-hint">← skip &nbsp;|&nbsp; → love</div>
+  </div>
+
+  <!-- ============ PROFILE PAGE ============ -->
+  <div id="page-profile" class="page">
+    <header class="profile-header">
+      <button id="back-btn" class="header-btn">← Back</button>
+      <div class="profile-title">
+        <h2 id="profile-username"></h2>
+        <p id="profile-stats"></p>
+      </div>
+      <button id="logout-btn" class="header-btn">Exit</button>
+    </header>
+    <div id="liked-grid" class="liked-grid">
+      <div class="empty-collection">
+        <p>No saved art yet.</p>
+        <p>Start swiping to build your collection!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ART INFO MODAL ============ -->
+  <div id="art-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close">✕</button>
+      <img id="modal-image" src="" alt="">
+      <div class="modal-info">
+        <h2 id="modal-title"></h2>
+        <p id="modal-artist"></p>
+        <p id="modal-date"></p>
+        <p id="modal-dept"></p>
+        <p id="modal-medium"></p>
+        <div class="modal-actions">
+          <button id="modal-download" class="btn-primary">↓ Download</button>
+          <a id="modal-met-link" href="#" target="_blank" class="btn-secondary">View on Met →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
