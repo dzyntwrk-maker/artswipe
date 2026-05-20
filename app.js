@@ -59,8 +59,10 @@ const REFILL_AT       = 80;    // refill artBuffer when it drops below this
 // Block museum junk — buttons, pottery, beads, ancient artifacts, etc.
 const BLOCKED_TITLE_WORDS = [
   'button','buttons','bead','beads','vessel','bowl','bowls','jar','jars',
-  'cup','cups','plate','plates','pitcher','pitchers','vase','vases',
+  'cup','cups','drinking cup','drinking vessel','goblet','chalice',
+  'plate','plates','pitcher','pitchers','vase','vases','platter','dish',
   'ewer','flask','amphora','kylix','lekythos','krater','oinochoe',
+  'hydria','pyxis','rhyton','urn','jug','decanter','censer','incense',
   'coin','coins','medal','medals','badge','brooch','pin','clasp',
   'buckle','hook','needle','tile','tiles','shard','fragment',
   'textile','fabric','tapestry','carpet','rug','furniture','chair',
@@ -69,6 +71,7 @@ const BLOCKED_TITLE_WORDS = [
   'necklace','bracelet','ring','earring','pendant','fibula',
   'statuette','figurine','amulet','scarab','mummy',
   'inscription','relief','frieze','sarcophagus',
+  'tomb','funerary','ritual','altar','reliquary','dynasty','ancient',
 ];
 
 const BLOCKED_MEDIUMS = [
@@ -182,14 +185,15 @@ function normalizeRow(row) {
   const sid = row.source_id || String(row.id);
   return {
     id:         `${src}_${sid}`,
-    title:      row.title   || 'Untitled',
-    artist:     row.artist  || '',
-    date:       row.year    || '',
-    dept:       row.department || '',
-    medium:     row.medium  || '',
-    imageSmall: row.image_small || row.thumb_url || row.image_url,
+    title:      row.title      || 'Untitled',
+    artist:     row.artist     || '',
+    date:       row.year       || '',
+    dept:       row.department || row.category || '',
+    medium:     row.medium     || '',
+    imageSmall: row.thumb_url  || row.image_url,
     imageLarge: row.image_url,
     sourceUrl:  row.source_url || '',
+    tags:       row.tags       || [],
   };
 }
 
@@ -203,7 +207,7 @@ function activeTags() {
   return [...prefs.styles, ...prefs.artists];
 }
 
-// Fetch a fresh random batch from Supabase via RPC (ORDER BY random())
+// Fetch a fresh random batch from Supabase (random offset for variety)
 async function fetchArtBatch() {
   if (isFetchingBatch) return;
   isFetchingBatch = true;
@@ -211,13 +215,24 @@ async function fetchArtBatch() {
     const tags = activeTags();
     if (!tags.length) return;
 
-    const { data, error } = await sb.rpc('get_artworks', {
-      p_tags:  tags,
-      p_limit: BATCH_SIZE,
-    });
+    // Get count so we can pick a random window
+    const { count } = await sb
+      .from('artworks')
+      .select('id', { count: 'exact', head: true })
+      .overlaps('tags', tags);
+
+    const total     = count || 500;
+    const maxOffset = Math.max(0, total - BATCH_SIZE);
+    const offset    = Math.floor(Math.random() * maxOffset);
+
+    const { data, error } = await sb
+      .from('artworks')
+      .select('*')
+      .overlaps('tags', tags)
+      .range(offset, offset + BATCH_SIZE - 1);
 
     if (error) {
-      console.warn('Supabase RPC error:', error.message);
+      console.warn('Supabase query error:', error.message);
       return;
     }
 
@@ -799,7 +814,7 @@ function init() {
 
   if (state.user?.name) {
     document.getElementById('username-input').value = state.user.name;
-    if (state.user.preferences && state.queue.length > 0) {
+    if (state.user.preferences) {
       showPage('page-swipe');
       setLikeCount();
       initSwipe();

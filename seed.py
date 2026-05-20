@@ -38,11 +38,15 @@ if not SUPABASE_KEY:
     sys.exit(1)
 
 SUPA_HEADERS = {
-    "apikey": SUPABASE_KEY,
+    "apikey":        SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "resolution=ignore-duplicates,return=minimal",
+    "Content-Type":  "application/json",
+    # ignore-duplicates = skip rows that violate UNIQUE(source, source_id)
+    "Prefer":        "resolution=ignore-duplicates,return=minimal",
 }
+
+# ── Existing table columns (no schema migration needed) ───────────────────────
+# id, title, artist, image_url, thumb_url, category, tags, source, source_id, year
 
 TARGET_PER_STYLE = 500   # aim for this many per style
 BATCH_SIZE       = 50    # rows per Supabase insert
@@ -207,17 +211,14 @@ def fetch_artic(query, style_id, max_per_query=200):
                 continue
             seen_ids.add(sid)
             results.append({
-                "source":      "artic",
-                "source_id":   str(d["id"]),
-                "title":       title,
-                "artist":      (d.get("artist_display") or "").split("\n")[0][:200],
-                "year":        d.get("date_display") or "",
-                "medium":      medium,
-                "department":  dept,
-                "style_tags":  [style_id],
-                "image_url":   f"{IIIF}/{img}/full/843,/0/default.jpg",
-                "image_small": f"{IIIF}/{img}/full/400,/0/default.jpg",
-                "source_url":  f"https://www.artic.edu/artworks/{d['id']}",
+                "source":    "artic",
+                "source_id": str(d["id"]),
+                "title":     title,
+                "artist":    (d.get("artist_display") or "").split("\n")[0][:200],
+                "year":      d.get("date_display") or "",
+                "tags":      [style_id],
+                "image_url": f"{IIIF}/{img}/full/843,/0/default.jpg",
+                "thumb_url": f"{IIIF}/{img}/full/400,/0/default.jpg",
             })
             if len(results) >= max_per_query:
                 return results
@@ -272,17 +273,14 @@ def fetch_met(query, style_id, max_ids=800, max_results=200):
 
         seen_ids.add(sid)
         results.append({
-            "source":      "met",
-            "source_id":   str(oid),
-            "title":       title,
-            "artist":      (d.get("artistDisplayName") or "")[:200],
-            "year":        d.get("objectDate") or "",
-            "medium":      medium,
-            "department":  dept,
-            "style_tags":  [style_id],
-            "image_url":   img_large,
-            "image_small": img_small,
-            "source_url":  d.get("objectURL") or f"https://www.metmuseum.org/art/collection/search/{oid}",
+            "source":    "met",
+            "source_id": str(oid),
+            "title":     title,
+            "artist":    (d.get("artistDisplayName") or "")[:200],
+            "year":      d.get("objectDate") or "",
+            "tags":      [style_id],
+            "image_url": img_large,
+            "thumb_url": img_small,
         })
         time.sleep(0.05)   # ~20 req/sec, polite
 
@@ -324,17 +322,14 @@ def fetch_cleveland(query, style_id, max_per_query=150):
             artist = ", ".join(c.get("description","") for c in creators[:2])[:200]
             seen_ids.add(sid)
             results.append({
-                "source":      "cleveland",
-                "source_id":   str(d.get("id","")),
-                "title":       title,
-                "artist":      artist,
-                "year":        d.get("creation_date") or "",
-                "medium":      medium,
-                "department":  dept,
-                "style_tags":  [style_id],
-                "image_url":   img_large,
-                "image_small": img_small,
-                "source_url":  f"https://www.clevelandart.org/art/{d.get('id','')}",
+                "source":    "cleveland",
+                "source_id": str(d.get("id","")),
+                "title":     title,
+                "artist":    artist,
+                "year":      d.get("creation_date") or "",
+                "tags":      [style_id],
+                "image_url": img_large,
+                "thumb_url": img_small,
             })
             if len(results) >= max_per_query:
                 return results
@@ -345,7 +340,7 @@ def fetch_cleveland(query, style_id, max_per_query=150):
 # MAIN: iterate all styles + artists
 # ══════════════════════════════════════════════════════════════════════════════
 def merge_tags(existing_rows, new_rows):
-    """Merge style_tags for artworks already seen (so one artwork can have many tags)."""
+    """Merge tags for artworks already seen (so one artwork can have many tags)."""
     by_key = {}
     for r in existing_rows:
         k = f"{r['source']}:{r['source_id']}"
@@ -354,8 +349,8 @@ def merge_tags(existing_rows, new_rows):
         k = f"{r['source']}:{r['source_id']}"
         if k in by_key:
             # merge tags
-            merged = list(set(by_key[k]["style_tags"] + r["style_tags"]))
-            by_key[k]["style_tags"] = merged
+            merged = list(set(by_key[k]["tags"] + r["tags"]))
+            by_key[k]["tags"] = merged
         else:
             by_key[k] = r
     return list(by_key.values())
