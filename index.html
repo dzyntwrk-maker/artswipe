@@ -127,6 +127,7 @@
         <div class="modal-actions">
           <button id="modal-download" class="btn-primary">↓ Download</button>
           <a id="modal-met-link" href="#" target="_blank" class="btn-secondary">View on Met →</a>
+          <a id="modal-print-link" href="#" target="_blank" class="btn-secondary" style="background:rgba(255,200,0,0.15);border-color:rgba(255,200,0,0.4);color:#ffc800;" onclick="openPrintLink(event)">🖼 Get a Print →</a>
         </div>
       </div>
     </div>
@@ -135,5 +136,34 @@
   <!-- Supabase JS client (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="app.js"></script>
+  <!-- FOOTER -->
+  <div style="background:#0a0a0f;border-top:1px solid #1a1a2e;padding:12px 20px;text-align:center;font-family:monospace;font-size:9px;color:#444;letter-spacing:2px;text-transform:uppercase;">
+    ArtSwipe by <a href="https://dizzy-links.vercel.app" target="_blank" style="color:#7c6ff7;text-decoration:none">Dizzy Inc</a>
+    &nbsp;·&nbsp;<a href="https://dizzy-agency.vercel.app" target="_blank" style="color:#444;text-decoration:none">AI Agency</a>
+    &nbsp;·&nbsp;<a href="https://dizzy-tools-one.vercel.app" target="_blank" style="color:#444;text-decoration:none">DZY Tools</a>
+    &nbsp;·&nbsp;<a href="https://dizzy-links.vercel.app" target="_blank" style="color:#7c6ff7;text-decoration:none">All Links ↗</a>
+  </div>
+
+  <script>
+  // Print monetization — search Fine Art America for the artwork title
+  function openPrintLink(e) {
+    var title = document.getElementById('modal-title').textContent || '';
+    var artist = document.getElementById('modal-artist').textContent.replace('by ', '') || '';
+    var query = encodeURIComponent((title + ' ' + artist).trim());
+    var url = 'https://fineartamerica.com/search.html?query=' + query + '&imageType=all';
+    window.open(url, '_blank');
+    e.preventDefault();
+  }
+  // Also wire "buy print" on liked-grid cards
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.buy-print-btn');
+    if (btn) {
+      var title = btn.dataset.title || '';
+      var artist = btn.dataset.artist || '';
+      var query = encodeURIComponent((title + ' ' + artist).trim());
+      window.open('https://fineartamerica.com/search.html?query=' + query, '_blank');
+    }
+  });
+  </script>
 </body>
 </html>
